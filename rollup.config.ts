@@ -3,6 +3,7 @@ import commonJS from '@rollup/plugin-commonjs';
 import { terser } from 'rollup-plugin-terser';
 import babel from '@rollup/plugin-babel';
 import typescript from 'rollup-plugin-typescript2';
+import nodePolyfill from 'rollup-plugin-polyfill-node';
 
 const input = ['src/index.ts'];
 
@@ -20,10 +21,11 @@ export default [
     input,
     onwarn,
     plugins: [
+      commonJS(),
+      nodePolyfill(),
       nodeResolve({
         extensions: ['.js', '.jsx', '.ts', '.tsx'],
       }),
-      commonJS(),
       typescript(),
       babel({
         babelHelpers: 'bundled',
@@ -48,10 +50,11 @@ export default [
     input,
     onwarn,
     plugins: [
+      commonJS(),
+      nodePolyfill(),
       nodeResolve({
         extensions: ['.js', '.jsx', '.ts', '.tsx'],
       }),
-      commonJS(),
       typescript(),
     ],
     output: [
