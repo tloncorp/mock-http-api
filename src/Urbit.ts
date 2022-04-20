@@ -1,9 +1,4 @@
-import { isBrowser, isNode } from 'browser-or-node';
-import {
-  fetchEventSource,
-  EventSourceMessage,
-} from '@microsoft/fetch-event-source';
-
+import { isBrowser } from 'browser-or-node';
 import {
   Scry,
   Thread,
@@ -18,6 +13,7 @@ import {
   Handler,
 } from './types';
 import { hexString } from './utils';
+import { setupWorker, rest } from 'msw';
 
 /**
  * A class for mocking interactions with an urbit ship, given a set of handlers.
@@ -129,6 +125,22 @@ export class UrbitMock {
     public desk?: string
   ) {
     if (isBrowser) {
+      // TODO: use this.url here. Currently this.url is empty string.
+      const sseMock = rest.put(
+        `http://localhost:3000/~/channel/${this.uid}`,
+        (_, res, ctx) => {
+          return res(
+            ctx.status(200),
+            ctx.set('Connection', 'keep-alive'),
+            ctx.set('Content-Type', 'text/event-stream'),
+            ctx.body('data: SUCCESS')
+          );
+        }
+      );
+
+      const worker = setupWorker(sseMock);
+
+      worker.start();
       window.addEventListener('beforeunload', this.delete);
     }
     return this;
@@ -166,14 +178,14 @@ export class UrbitMock {
    * That's why we roll it into this.authenticate
    */
   async connect(): Promise<void> {
-    return Promise.resolve();
+    return Promise.resolve(null);
   }
 
   /**
    * Initializes the SSE pipe for the appropriate channel.
    */
   async eventSource(): Promise<void> {
-    return Promise.resolve();
+    return Promise.resolve(null);
   }
 
   /**
@@ -296,7 +308,7 @@ export class UrbitMock {
     };
     const [send, result] = await Promise.all([
       new Promise((resolve) => {
-        resolve();
+        resolve(null);
       }),
       new Promise<number>((resolve, reject) => {
         this.outstandingPokes.set(message.id, {
@@ -347,7 +359,7 @@ export class UrbitMock {
       quit,
     });
 
-    // await this.sendJSONtoChannel(message);
+    await this.sendJSONtoChannel(message);
 
     return message.id;
   }
@@ -405,14 +417,16 @@ export class UrbitMock {
   async scry(params: Scry) {
     const { app, path } = params;
 
-    const handler = this.handlers
-      ?.find((h) => h.path === path && h.app === app)
+    const handler = this.handlers?.find(
+      (h) => h.path === path && h.app === app
+    );
 
     if (!handler) {
-      throw new Error(`Mock scry: Cannot find handler for app:${app} and path:${path}`)
+      throw new Error(
+        `Mock scry: Cannot find handler for app:${app} and path:${path}`
+      );
     }
-    const response =  handler.func();
-
+    const response = handler.func();
 
     return response;
   }
@@ -439,11 +453,14 @@ export class UrbitMock {
       throw new Error('Must supply desk to run thread from');
     }
 
-    const handler = this.handlers
-      ?.find((h) => h.desk === desk && h.threadName === threadName)
+    const handler = this.handlers?.find(
+      (h) => h.desk === desk && h.threadName === threadName
+    );
 
     if (!handler) {
-      throw new Error(`mock thread: Cannot find handler for desk:${desk} and thread:${threadName}`)
+      throw new Error(
+        `mock thread: Cannot find handler for desk:${desk} and thread:${threadName}`
+      );
     }
 
     const response = handler.func();
