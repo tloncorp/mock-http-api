@@ -3,6 +3,7 @@
  *
  */
 export type Handler = {
+  action?: string;
   path?: string;
   app?: string;
   desk?: string;

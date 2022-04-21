@@ -128,12 +128,23 @@ export class UrbitMock {
       // TODO: use this.url here. Currently this.url is empty string.
       const sseMock = rest.put(
         `http://localhost:3000/~/channel/${this.uid}`,
-        (_, res, ctx) => {
+        (req, res, ctx) => {
+          // @ts-ignore
+          const { action, app, path } = req.body[0];
+          const handler = this.handlers?.find(
+            (h) => h.action === action && h.app === app && h.path === path
+          );
+          if (!handler) {
+            throw new Error(
+              `Mock subscribe: Cannot find handler for app:${app}, path: ${path} and action:${action}`
+            );
+          }
+          const responseBody = handler.func();
           return res(
             ctx.status(200),
             ctx.set('Connection', 'keep-alive'),
             ctx.set('Content-Type', 'text/event-stream'),
-            ctx.body('data: SUCCESS')
+            ctx.body(JSON.stringify(responseBody))
           );
         }
       );
