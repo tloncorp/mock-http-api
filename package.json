@@ -1,5 +1,5 @@
 {
-  "name": "@urbit/mock-http-api",
+  "name": "@tloncorp/mock-http-api",
   "version": "2.1.0",
   "license": "MIT",
   "description": "Library to mock interactions with an Urbit ship over HTTP",
