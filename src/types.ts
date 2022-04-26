@@ -8,6 +8,7 @@ export type Handler = {
   app?: string;
   desk?: string;
   body?: {};
+  mark?: string;
   threadName?: string;
   func: () => {};
 }

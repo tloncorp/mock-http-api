@@ -130,16 +130,20 @@ export class UrbitMock {
         `http://localhost:3000/~/channel/${this.uid}`,
         (req, res, ctx) => {
           // @ts-ignore
-          const { action, app, path } = req.body[0];
-          const handler = this.handlers?.find(
-            (h) => h.action === action && h.app === app && h.path === path
+          const { action, app, path, mark } = req.body[0];
+          const subscribeHandler = this.handlers?.find(
+            (h) =>
+              h.action === action && h.app === app && h.path === path && !mark
           );
-          if (!handler) {
+          const pokeHandler = this.handlers?.find(
+            (h) => h.action === action && h.app === app && h.mark === mark
+          );
+          if (!subscribeHandler && !pokeHandler) {
             throw new Error(
-              `Mock subscribe: Cannot find handler for app:${app}, path: ${path} and action:${action}`
+              `Mock subscribe/pokeHandler: Cannot find handler for app:${app}, path: ${path} and action:${action} OR ${app} and ${mark} and ${action} (for pokes)`
             );
           }
-          const responseBody = handler.func();
+          const responseBody = subscribeHandler?.func() ?? pokeHandler?.func();
           return res(
             ctx.status(200),
             ctx.set('Connection', 'keep-alive'),
@@ -317,24 +321,9 @@ export class UrbitMock {
       mark,
       json,
     };
-    const [send, result] = await Promise.all([
-      new Promise((resolve) => {
-        resolve(null);
-      }),
-      new Promise<number>((resolve, reject) => {
-        this.outstandingPokes.set(message.id, {
-          onSuccess: () => {
-            onSuccess();
-            resolve(message.id);
-          },
-          onError: (event) => {
-            onError(event);
-            reject(event.err);
-          },
-        });
-      }),
-    ]);
-    return result;
+    await this.sendJSONtoChannel(message);
+
+    return message.id;
   }
 
   /**
