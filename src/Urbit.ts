@@ -125,9 +125,8 @@ export class UrbitMock {
     public desk?: string
   ) {
     if (isBrowser) {
-      // TODO: use this.url here. Currently this.url is empty string.
       const sseMock = rest.put(
-        `http://localhost:3000/~/channel/${this.uid}`,
+        `${this.url}/~/channel/${this.uid}`,
         (req, res, ctx) => {
           // @ts-ignore
           const { action, app, path, mark } = req.body[0];
