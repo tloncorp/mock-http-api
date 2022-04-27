@@ -223,7 +223,7 @@ export function isScryHandler(handler: Handler): handler is ScryHandler {
 
 type Responder<Request> = (req: Message & Request) => UrbitResponse<any>;
 
-export interface PokeHandler extends Poke<any> {
+export interface PokeHandler extends Pick<Poke<any>, 'app' | 'mark'> {
   action: 'poke';
 
   /**
@@ -252,7 +252,8 @@ export function isPokeHandler(handler: Handler): handler is PokeHandler {
   return handler.action === 'poke';
 }
 
-export interface SubscriptionHandler extends SubscriptionRequestInterface {
+export interface SubscriptionHandler
+  extends Pick<SubscriptionRequestInterface, 'app' | 'path'> {
   action: 'subscribe';
   /**
    * Used for mocking the initial server response otherwise will respond
@@ -274,7 +275,7 @@ export function isSubscriptionHandler(
   return handler.action === 'subscribe';
 }
 
-export interface ThreadHandler extends Thread<any> {
+export interface ThreadHandler extends Omit<Thread<any>, 'desk' | 'body'> {
   action: 'thread';
   /**
    * A function which generates a thread response
