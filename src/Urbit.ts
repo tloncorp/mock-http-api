@@ -401,7 +401,6 @@ export class UrbitMock {
     const pokeHandler = this.handlers
       .filter(isPokeHandler)
       .find((h) => h.app === app && h.mark === mark);
-    debugger;
 
     if (!pokeHandler) {
       return result;
