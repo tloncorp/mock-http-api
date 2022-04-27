@@ -275,7 +275,7 @@ export function isSubscriptionHandler(
   return handler.action === 'subscribe';
 }
 
-export interface ThreadHandler extends Omit<Thread<any>, 'desk' | 'body'> {
+export interface ThreadHandler extends Omit<Thread<any>, 'body'> {
   action: 'thread';
   /**
    * A function which generates a thread response
