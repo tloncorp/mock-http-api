@@ -1,11 +1,15 @@
 {
   "name": "@tloncorp/mock-http-api",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "license": "MIT",
   "description": "Library to mock interactions with an Urbit ship over HTTP",
   "type": "module",
-  "main": "dist/cjs/index.js",
+  "main": "dist/cjs/index.cjs",
   "module": "dist/esm/index.js",
+  "exports": {
+    "require": "./dist/cjs/index.cjs",
+    "import": "./dist/esm/index.js"
+  },
   "jsdelivr": "dist/urbit-http-api.min.js",
   "unpkg": "dist/urbit-http-api.min.js",
   "types": "dist/index.d.ts",
