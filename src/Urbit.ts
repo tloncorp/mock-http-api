@@ -6,11 +6,15 @@ import {
   PokeInterface,
   SubscriptionRequestInterface,
   headers,
-  SSEOptions,
   PokeHandlers,
   Message,
-  FatalError,
   Handler,
+  Poke,
+  isSubscriptionHandler,
+  isPokeHandler,
+  isScryHandler,
+  isThreadHandler,
+  UrbitResponse,
 } from './types';
 import { hexString } from './utils';
 import { setupWorker, rest } from 'msw';
@@ -119,9 +123,9 @@ export class UrbitMock {
    * @param code The access code for the ship at that address
    */
   constructor(
+    public handlers: Handler[],
     public url: string,
     public code?: string,
-    public handlers?: Handler[],
     public desk?: string
   ) {
     if (isBrowser) {
@@ -129,20 +133,32 @@ export class UrbitMock {
         `${this.url}/~/channel/${this.uid}`,
         (req, res, ctx) => {
           // @ts-ignore
-          const { action, app, path, mark } = req.body[0];
-          const subscribeHandler = this.handlers?.find(
-            (h) =>
-              h.action === action && h.app === app && h.path === path && !mark
-          );
-          const pokeHandler = this.handlers?.find(
-            (h) => h.action === action && h.app === app && h.mark === mark
-          );
-          if (!subscribeHandler && !pokeHandler) {
+          const requestBody = req.body[0];
+          const { action, app, path, mark } = requestBody;
+          const subscribeHandler = this.handlers
+            .filter(isSubscriptionHandler)
+            .find(
+              (h) => h.action === action && h.app === app && h.path === path
+            );
+          const pokeHandler = this.handlers
+            .filter(isPokeHandler)
+            .find(
+              (h) => h.action === action && h.app === app && h.mark === mark
+            );
+          const handler = subscribeHandler || pokeHandler;
+          if (!handler) {
             throw new Error(
               `Mock subscribe/pokeHandler: Cannot find handler for app:${app}, path: ${path} and action:${action} OR ${app} and ${mark} and ${action} (for pokes)`
             );
           }
-          const responseBody = subscribeHandler?.func() ?? pokeHandler?.func();
+
+          const data = handler.initialResponder
+            ? handler.initialResponder(requestBody)
+            : createResponse(requestBody);
+          this.handleEvents(data);
+          const respond =
+            handler.immediateResponder || (async () => requestBody.id);
+          const responseBody = respond(requestBody);
           return res(
             ctx.status(200),
             ctx.set('Connection', 'keep-alive'),
@@ -160,6 +176,51 @@ export class UrbitMock {
     return this;
   }
 
+  handleEvents(data: UrbitResponse<any>) {
+    if (data.response === 'poke' && this.outstandingPokes.has(data.id)) {
+      const funcs = this.outstandingPokes.get(data.id);
+      if (data.hasOwnProperty('ok')) {
+        funcs.onSuccess();
+      } else if (data.hasOwnProperty('err')) {
+        console.error(data.err);
+        funcs.onError(data.err);
+      } else {
+        console.error('Invalid poke response', data);
+      }
+      this.outstandingPokes.delete(data.id);
+    } else if (
+      data.response === 'subscribe' &&
+      this.outstandingSubscriptions.has(data.id)
+    ) {
+      const funcs = this.outstandingSubscriptions.get(data.id);
+      if (data.hasOwnProperty('err')) {
+        console.error(data.err);
+        funcs.err(data.err, data.id.toString());
+        this.outstandingSubscriptions.delete(data.id);
+      }
+    } else if (
+      data.response === 'diff' &&
+      this.outstandingSubscriptions.has(data.id)
+    ) {
+      const funcs = this.outstandingSubscriptions.get(data.id);
+      try {
+        funcs.event(data.json);
+      } catch (e) {
+        console.error('Failed to call subscription event callback', e);
+      }
+    } else if (
+      data.response === 'quit' &&
+      this.outstandingSubscriptions.has(data.id)
+    ) {
+      const funcs = this.outstandingSubscriptions.get(data.id);
+      funcs.quit(data);
+      this.outstandingSubscriptions.delete(data.id);
+    } else {
+      console.log([...this.outstandingSubscriptions.keys()]);
+      console.log('Unrecognized response', data);
+    }
+  }
+
   /**
    * All-in-one hook-me-up.
    *
@@ -172,9 +233,10 @@ export class UrbitMock {
     ship,
     url,
     code,
+    handlers,
     verbose = false,
   }: AuthenticationInterface) {
-    const airlock = new UrbitMock('');
+    const airlock = new UrbitMock(handlers, url, code);
     airlock.verbose = verbose;
     airlock.ship = ship;
     await airlock.connect();
@@ -312,7 +374,7 @@ export class UrbitMock {
       ship: this.ship,
       ...params,
     };
-    const message: Message = {
+    const message: Message & Poke<T> = {
       id: this.getEventId(),
       action: 'poke',
       ship,
@@ -320,9 +382,39 @@ export class UrbitMock {
       mark,
       json,
     };
-    await this.sendJSONtoChannel(message);
+    const [, result] = await Promise.all([
+      this.sendJSONtoChannel(message),
+      new Promise<number>((resolve, reject) => {
+        this.outstandingPokes.set(message.id, {
+          onSuccess: () => {
+            onSuccess();
+            resolve(message.id);
+          },
+          onError: (event) => {
+            onError(event);
+            reject(event.err);
+          },
+        });
+      }),
+    ]);
 
-    return message.id;
+    const pokeHandler = this.handlers
+      .filter(isPokeHandler)
+      .find((h) => h.app === app && h.mark === mark);
+
+    if (!pokeHandler) {
+      return result;
+    }
+
+    const returnSub = pokeHandler.returnSubscription;
+    const [key] = [...this.outstandingSubscriptions.entries()].find(
+      ([, s]) => s.app === returnSub.app && s.path === returnSub.path
+    );
+    setTimeout(() => {
+      this.handleEvents({ ...pokeHandler.dataResponder(message), id: key });
+    }, Math.random() * 100 + 75);
+
+    return result;
   }
 
   /**
@@ -413,19 +505,19 @@ export class UrbitMock {
    * @param params The scry request
    * @returns The scry result
    */
-  async scry(params: Scry) {
+  async scry<T>(params: Scry): Promise<T> {
     const { app, path } = params;
 
-    const handler = this.handlers?.find(
-      (h) => h.path === path && h.app === app
-    );
+    const handler = this.handlers
+      .filter(isScryHandler)
+      .find((h) => h.path === path && h.app === app);
 
     if (!handler) {
       throw new Error(
         `Mock scry: Cannot find handler for app:${app} and path:${path}`
       );
     }
-    const response = handler.func();
+    const response = handler.func(params);
 
     return response;
   }
@@ -440,21 +532,15 @@ export class UrbitMock {
    * @param body        The data to send to the thread
    * @returns  The return value of the thread
    */
-  async thread<T = any>(params: Thread<T>) {
-    const {
-      inputMark,
-      outputMark,
-      threadName,
-      body,
-      desk = this.desk,
-    } = params;
+  async thread<R, T = any>(params: Thread<T>): Promise<R> {
+    const { threadName, desk = this.desk } = params;
     if (!desk) {
       throw new Error('Must supply desk to run thread from');
     }
 
-    const handler = this.handlers?.find(
-      (h) => h.desk === desk && h.threadName === threadName
-    );
+    const handler = this.handlers
+      .filter(isThreadHandler)
+      .find((h) => h.desk === desk && h.threadName === threadName);
 
     if (!handler) {
       throw new Error(
@@ -462,7 +548,7 @@ export class UrbitMock {
       );
     }
 
-    const response = handler.func();
+    const response = handler.func<T>(params);
 
     return response;
   }
@@ -473,10 +559,26 @@ export class UrbitMock {
    * @param name Name of the ship e.g. zod
    * @param code Code to log in
    */
-  static async onArvoNetwork(ship: string, code: string): Promise<UrbitMock> {
+  static async onArvoNetwork(
+    ship: string,
+    code: string,
+    handlers: Handler[]
+  ): Promise<UrbitMock> {
     const url = `https://${ship}.arvo.network`;
-    return await UrbitMock.authenticate({ ship, url, code });
+    return await UrbitMock.authenticate({ ship, url, code, handlers });
   }
+}
+
+export function createResponse<Action, Response>(
+  req: Message & (Poke<Action> | SubscriptionRequestInterface),
+  data?: Response
+): UrbitResponse<Response> {
+  return {
+    ok: true,
+    id: req.id || 0,
+    response: req.action as 'poke' | 'subscribe',
+    json: data || req.json,
+  };
 }
 
 export default UrbitMock;
