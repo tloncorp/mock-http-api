@@ -406,10 +406,21 @@ export class UrbitMock {
       return result;
     }
 
-    const returnSub = pokeHandler.returnSubscription;
-    const [key] = [...this.outstandingSubscriptions.entries()].find(
+    const returnSub =
+      typeof pokeHandler.returnSubscription === 'function'
+        ? pokeHandler.returnSubscription(message)
+        : pokeHandler.returnSubscription;
+    const subs = Array.from(this.outstandingSubscriptions.entries());
+    const items = subs.find(
       ([, s]) => s.app === returnSub.app && s.path === returnSub.path
     );
+    console.log(
+      items,
+      returnSub.path,
+      subs.map(([, s]) => s.app + s.path)
+    );
+    const key = items && items[0];
+
     setTimeout(() => {
       this.handleEvents({ ...pokeHandler.dataResponder(message), id: key });
     }, Math.random() * 100 + 75);
