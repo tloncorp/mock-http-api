@@ -414,11 +414,6 @@ export class UrbitMock {
     const items = subs.find(
       ([, s]) => s.app === returnSub.app && s.path === returnSub.path
     );
-    console.log(
-      items,
-      returnSub.path,
-      subs.map(([, s]) => s.app + s.path)
-    );
     const key = items && items[0];
 
     setTimeout(() => {
