@@ -15,9 +15,13 @@ import {
   isScryHandler,
   isThreadHandler,
   UrbitResponse,
+  PathMatcher,
+  Path,
+  WithMatcher,
 } from './types';
 import { hexString } from './utils';
 import { setupWorker, rest } from 'msw';
+import { match, parse, pathToRegexp } from 'path-to-regexp';
 
 /**
  * A class for mocking interactions with an urbit ship, given a set of handlers.
@@ -138,7 +142,8 @@ export class UrbitMock {
           const subscribeHandler = this.handlers
             .filter(isSubscriptionHandler)
             .find(
-              (h) => h.action === action && h.app === app && h.path === path
+              (h) =>
+                h.action === action && h.app === app && matchPaths(h.path, path)
             );
           const pokeHandler = this.handlers
             .filter(isPokeHandler)
@@ -153,7 +158,11 @@ export class UrbitMock {
           }
 
           const data = handler.initialResponder
-            ? handler.initialResponder(requestBody)
+            ? handler.initialResponder(
+                requestBody,
+                this,
+                'path' in handler ? getParams(handler.path, path) : {}
+              )
             : createResponse(requestBody);
           this.handleEvents(data);
           const respond =
@@ -219,6 +228,15 @@ export class UrbitMock {
       console.log([...this.outstandingSubscriptions.keys()]);
       console.log('Unrecognized response', data);
     }
+  }
+
+  publishUpdate(sub: SubscriptionRequestInterface, payload: any) {
+    this.handleEvents({
+      ok: true,
+      id: getSubKey(sub, this.outstandingSubscriptions),
+      response: 'diff',
+      json: payload,
+    });
   }
 
   /**
@@ -410,14 +428,14 @@ export class UrbitMock {
       typeof pokeHandler.returnSubscription === 'function'
         ? pokeHandler.returnSubscription(message)
         : pokeHandler.returnSubscription;
-    const subs = Array.from(this.outstandingSubscriptions.entries());
-    const items = subs.find(
-      ([, s]) => s.app === returnSub.app && s.path === returnSub.path
-    );
-    const key = items && items[0];
+    debugger;
+    const key = getSubKey(returnSub, this.outstandingSubscriptions);
 
     setTimeout(() => {
-      this.handleEvents({ ...pokeHandler.dataResponder(message), id: key });
+      this.handleEvents({
+        ...pokeHandler.dataResponder(message, this),
+        id: key,
+      });
     }, Math.random() * 100 + 75);
 
     return result;
@@ -516,14 +534,14 @@ export class UrbitMock {
 
     const handler = this.handlers
       .filter(isScryHandler)
-      .find((h) => h.path === path && h.app === app);
+      .find((h) => h.app === app && matchPaths(h.path, path));
 
     if (!handler) {
       throw new Error(
         `Mock scry: Cannot find handler for app:${app} and path:${path}`
       );
     }
-    const response = handler.func(params);
+    const response = handler.func(params, this, getParams(handler.path, path));
 
     return response;
   }
@@ -577,14 +595,49 @@ export class UrbitMock {
 
 export function createResponse<Action, Response>(
   req: Message & (Poke<Action> | SubscriptionRequestInterface),
+  action?: 'poke' | 'subscribe' | 'diff',
   data?: Response
 ): UrbitResponse<Response> {
   return {
     ok: true,
     id: req.id || 0,
-    response: req.action as 'poke' | 'subscribe',
+    response: action || (req.action as 'poke' | 'subscribe' | 'diff'),
     json: data || req.json,
   };
+}
+
+function matchPaths(test: Path | PathMatcher, path: string): boolean {
+  if (typeof test === 'function') {
+    return test(path);
+  }
+
+  const regex = pathToRegexp(test);
+  return test === path || regex.test(path);
+}
+
+function getParams(
+  test: Path | PathMatcher,
+  path: string
+): Record<string, string> {
+  if (typeof test === 'function') {
+    return {};
+  }
+
+  const matcher = match(test, { decode: decodeURIComponent });
+  const theMatch = matcher(path);
+
+  return (theMatch ? theMatch.params : {}) as Record<string, string>;
+}
+
+function getSubKey(
+  sub: WithMatcher<SubscriptionRequestInterface>,
+  outstandingSubscriptions: Map<number, SubscriptionRequestInterface>
+) {
+  const subs = Array.from(outstandingSubscriptions.entries());
+  const items = subs.find(
+    ([, s]) => s.app === sub.app && matchPaths(sub.path, s.path)
+  );
+  return items && items[0];
 }
 
 export default UrbitMock;
