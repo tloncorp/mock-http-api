@@ -428,7 +428,7 @@ export class UrbitMock {
       typeof pokeHandler.returnSubscription === 'function'
         ? pokeHandler.returnSubscription(message)
         : pokeHandler.returnSubscription;
-    debugger;
+
     const key = getSubKey(returnSub, this.outstandingSubscriptions);
 
     setTimeout(() => {
