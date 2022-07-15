@@ -157,7 +157,7 @@ export interface SubscriptionInterface {
   /**
    * Handle %fact
    */
-  event?(data: any): void;
+  event?(data: any, mark: string): void;
   /**
    * Handle %kick
    */
@@ -211,6 +211,7 @@ export interface UrbitResponse<DataType> {
   id: number;
   response: 'poke' | 'subscribe' | 'diff' | 'quit';
   json: DataType;
+  mark?: string;
   ok?: boolean;
   err?: any;
 }
