@@ -1,6 +1,6 @@
 {
   "name": "@tloncorp/mock-http-api",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "license": "MIT",
   "description": "Library to mock interactions with an Urbit ship over HTTP",
   "type": "module",
