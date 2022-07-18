@@ -213,7 +213,7 @@ export class UrbitMock {
     ) {
       const funcs = this.outstandingSubscriptions.get(data.id);
       try {
-        funcs.event(data.json);
+        funcs.event(data.json, data.mark);
       } catch (e) {
         console.error('Failed to call subscription event callback', e);
       }
@@ -230,12 +230,13 @@ export class UrbitMock {
     }
   }
 
-  publishUpdate(sub: SubscriptionRequestInterface, payload: any) {
+  publishUpdate(sub: SubscriptionRequestInterface, payload: any, mark: string) {
     this.handleEvents({
       ok: true,
       id: getSubKey(sub, this.outstandingSubscriptions),
       response: 'diff',
       json: payload,
+      mark,
     });
   }
 
@@ -428,7 +429,6 @@ export class UrbitMock {
       typeof pokeHandler.returnSubscription === 'function'
         ? pokeHandler.returnSubscription(message)
         : pokeHandler.returnSubscription;
-
     const key = getSubKey(returnSub, this.outstandingSubscriptions);
 
     setTimeout(() => {
@@ -596,13 +596,15 @@ export class UrbitMock {
 export function createResponse<Action, Response>(
   req: Message & (Poke<Action> | SubscriptionRequestInterface),
   action?: 'poke' | 'subscribe' | 'diff',
-  data?: Response
+  data?: Response,
+  mark?: string
 ): UrbitResponse<Response> {
   return {
     ok: true,
     id: req.id || 0,
     response: action || (req.action as 'poke' | 'subscribe' | 'diff'),
     json: data || req.json,
+    mark: mark || req.mark,
   };
 }
 
